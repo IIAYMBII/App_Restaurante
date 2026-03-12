@@ -531,8 +531,8 @@ function PantallaVentas() {
         ? persona.nombre.trim().toUpperCase()
         : `PERSONA ${idx + 1}`;
 
-      // Encabezado persona (solo si hay más de 1)
-      if (personasConItems.length > 1) {
+      // Encabezado persona (mostrar siempre si tiene nombre)
+      if (persona.nombre && persona.nombre.trim()) {
         doc.setFont("helvetica", "bold");
         doc.setFontSize(9);
         doc.setTextColor(0, 0, 0);
