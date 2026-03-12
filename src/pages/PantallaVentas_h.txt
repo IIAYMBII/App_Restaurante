@@ -1,0 +1,281 @@
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { getDB, isWeb } from "../database/database";
+
+// Para Capacitor/Android
+import { BluetoothSerial } from "@awesome-cordova-plugins/bluetooth-serial";
+
+function PantallaVentas() {
+  const navigate = useNavigate();
+  const [productos, setProductos] = useState([]);
+  const [carrito, setCarrito] = useState([]);
+  const [dispositivos, setDispositivos] = useState([]);
+  const [impresoraConectada, setImpresoraConectada] = useState(null);
+  const [recibido, setRecibido] = useState(""); // dinero recibido
+  const [cambio, setCambio] = useState(0);
+
+  // 🔹 Cargar productos
+  useEffect(() => {
+    const cargar = async () => {
+      if (isWeb()) {
+        const data = localStorage.getItem("productos");
+        setProductos(data ? JSON.parse(data) : []);
+      } else {
+        const db = getDB();
+        const res = await db.query("SELECT * FROM productos");
+        setProductos(res.values || []);
+      }
+    };
+    cargar();
+  }, []);
+
+  // 🔹 Agregar al carrito
+  const agregarAlCarrito = (producto) => {
+    const existe = carrito.find((p) => p.id === producto.id);
+    if (existe) {
+      const actualizado = carrito.map((p) =>
+        p.id === producto.id ? { ...p, cantidad: p.cantidad + 1 } : p,
+      );
+      setCarrito(actualizado);
+    } else {
+      setCarrito([...carrito, { ...producto, cantidad: 1 }]);
+    }
+  };
+
+  // 🔹 Quitar del carrito
+  const eliminarDelCarrito = (id) => {
+    setCarrito(carrito.filter((p) => p.id !== id));
+  };
+
+  // 🔹 Calcular total
+  const total = carrito.reduce(
+    (acc, item) => acc + item.precio * item.cantidad,
+    0,
+  );
+
+  // 🔹 Folio
+  const obtenerSiguienteFolio = async () => {
+    if (isWeb()) {
+      const ventas = JSON.parse(localStorage.getItem("ventas")) || [];
+      return ventas.length > 0 ? ventas[ventas.length - 1].folio + 1 : 0;
+    } else {
+      const db = getDB();
+      const res = await db.query("SELECT MAX(folio) as ultimo FROM ventas");
+      const ultimo = res.values[0]?.ultimo;
+      return ultimo !== null && ultimo !== undefined ? ultimo + 1 : 0;
+    }
+  };
+
+  // 🔹 Generar texto del ticket
+  const generarTicket = (folio) => {
+    let texto = "";
+    texto += "🌮 TAQUERIA EL JEFE 🌮\n";
+    texto += `FOLIO: ${String(folio).padStart(9, "0")}\n`;
+    texto += "----------------------------\n";
+    carrito.forEach((item) => {
+      texto += `${item.nombre} x${item.cantidad} - $${(
+        item.precio * item.cantidad
+      ).toFixed(2)}\n`;
+    });
+    texto += "----------------------------\n";
+    texto += `TOTAL: $${total.toFixed(2)}\n`;
+    texto += `RECIBIDO: $${parseFloat(recibido).toFixed(2)}\n`;
+    texto += `CAMBIO: $${cambio.toFixed(2)}\n`;
+    texto += "\nGracias por su compra\n\n\n";
+    return texto;
+  };
+
+  // 🔹 Imprimir ticket
+  const imprimirTicket = async (folio) => {
+    const ticket = generarTicket(folio);
+    if (isWeb()) {
+      const ventana = window.open("", "", "width=300,height=600");
+      ventana.document.write(`<pre>${ticket}</pre>`);
+      ventana.print();
+      ventana.close();
+    } else {
+      if (!impresoraConectada) return alert("No hay impresora conectada");
+      try {
+        await BluetoothSerial.write(ticket);
+      } catch (err) {
+        console.error("Error al imprimir:", err);
+        alert("Error al imprimir el ticket");
+      }
+    }
+  };
+
+  // 🔹 Confirmar venta
+  const confirmarVenta = async () => {
+    if (carrito.length === 0) return alert("Carrito vacío");
+    if (!recibido || parseFloat(recibido) < total)
+      return alert("El dinero recibido es insuficiente");
+
+    setCambio(parseFloat(recibido) - total);
+
+    const fecha = new Date().toISOString();
+    const folio = await obtenerSiguienteFolio();
+
+    if (isWeb()) {
+      let ventas = JSON.parse(localStorage.getItem("ventas")) || [];
+      ventas.push({ id: Date.now(), folio, total, fecha, detalle: carrito });
+      localStorage.setItem("ventas", JSON.stringify(ventas));
+    } else {
+      const db = getDB();
+      const result = await db.run(
+        "INSERT INTO ventas (folio, total, fecha) VALUES (?, ?, ?)",
+        [folio, total, fecha],
+      );
+      const ventaId = result.lastId;
+      for (let item of carrito) {
+        await db.run(
+          `INSERT INTO detalle_venta (venta_id, producto_id, nombre, precio, cantidad) VALUES (?, ?, ?, ?, ?)`,
+          [ventaId, item.id, item.nombre, item.precio, item.cantidad],
+        );
+      }
+    }
+
+    await imprimirTicket(folio);
+    alert(`Venta realizada - Folio ${folio}`);
+    setCarrito([]);
+    setRecibido("");
+    setCambio(0);
+  };
+
+  // 🔹 Buscar impresoras Bluetooth
+  const buscarImpresoras = async () => {
+    try {
+      const lista = await BluetoothSerial.list();
+      setDispositivos(lista);
+    } catch (err) {
+      console.error("Error buscando impresoras:", err);
+    }
+  };
+
+  // 🔹 Conectar impresora
+  const conectarImpresora = async (device) => {
+    try {
+      await BluetoothSerial.connect(device.id);
+      setImpresoraConectada(device);
+      alert(`Conectado a ${device.name}`);
+    } catch (err) {
+      console.error(err);
+      alert("No se pudo conectar a la impresora");
+    }
+  };
+
+  return (
+    <div className="container mt-4">
+      <button
+        className="btn btn-outline-secondary mb-3"
+        onClick={() => navigate("/")}
+      >
+        Regresar
+      </button>
+
+      <h2 className="mb-4">🛒 Pantalla de Ventas</h2>
+
+      {/* Impresora */}
+      <div className="mb-3">
+        {!impresoraConectada ? (
+          <>
+            <button className="btn btn-primary mb-2" onClick={buscarImpresoras}>
+              Buscar impresoras Bluetooth
+            </button>
+            {dispositivos.map((d) => (
+              <button
+                key={d.id}
+                className="btn btn-success me-2 mb-2"
+                onClick={() => conectarImpresora(d)}
+              >
+                {d.name}
+              </button>
+            ))}
+          </>
+        ) : (
+          <p>Conectado a: {impresoraConectada.name}</p>
+        )}
+      </div>
+
+      <div className="row">
+        {/* Productos */}
+        <div className="col-md-6">
+          <h4>Productos</h4>
+          <div className="row">
+            {productos.map((p) => (
+              <div key={p.id} className="col-6 col-md-12 mb-3">
+                <div className="card h-100">
+                  {p.imagen && (
+                    <img
+                      src={p.imagen}
+                      className="card-img-top"
+                      alt={p.nombre}
+                      style={{ height: "120px", objectFit: "cover" }}
+                    />
+                  )}
+                  <div className="card-body d-flex flex-column">
+                    <h5 className="card-title">{p.nombre}</h5>
+                    <p className="card-text">${p.precio.toFixed(2)}</p>
+                    <button
+                      className="btn btn-primary mt-auto"
+                      onClick={() => agregarAlCarrito(p)}
+                    >
+                      Agregar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Carrito */}
+        <div className="col-md-6">
+          <h4>Carrito</h4>
+          {carrito.length === 0 && <p>No hay productos</p>}
+
+          {carrito.map((item) => (
+            <div
+              key={item.id}
+              className="d-flex justify-content-between align-items-center border p-2 mb-2"
+            >
+              <div>
+                {item.nombre} x{item.cantidad}
+              </div>
+              <div>
+                ${(item.precio * item.cantidad).toFixed(2)}
+                <button
+                  className="btn btn-sm btn-danger ms-2"
+                  onClick={() => eliminarDelCarrito(item.id)}
+                >
+                  X
+                </button>
+              </div>
+            </div>
+          ))}
+
+          <div className="mb-2">
+            <label>Recibido: </label>
+            <input
+              type="number"
+              className="form-control"
+              value={recibido}
+              onChange={(e) => setRecibido(e.target.value)}
+              placeholder="Ingrese monto recibido"
+            />
+          </div>
+
+          <h4>Cambio: ${cambio.toFixed(2)}</h4>
+
+          <button
+            className="btn btn-success w-100 mt-2"
+            onClick={confirmarVenta}
+          >
+            Confirmar Venta
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default PantallaVentas;

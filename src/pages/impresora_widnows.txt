@@ -1,0 +1,692 @@
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { getDB, isWeb } from "../database/database";
+import { jsPDF } from "jspdf";
+
+const styles = `
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=Lato:wght@300;400;700&display=swap');
+
+  :root {
+    --rojo: #C0392B;
+    --rojo-oscuro: #922B21;
+    --naranja: #E67E22;
+    --naranja-claro: #F39C12;
+    --crema: #FDF6EC;
+    --crema-oscuro: #F5E6C8;
+    --marron: #6E2C0E;
+    --marron-claro: #A04000;
+    --texto-oscuro: #2C1810;
+    --texto-medio: #5D4037;
+    --blanco: #FFFDF9;
+  }
+
+  .rv-app {
+    font-family: 'Lato', sans-serif;
+    background-color: var(--crema);
+    min-height: 100vh;
+    background-image:
+      radial-gradient(circle at 10% 20%, rgba(192,57,43,0.06) 0%, transparent 50%),
+      radial-gradient(circle at 90% 80%, rgba(230,126,34,0.08) 0%, transparent 50%);
+  }
+
+  /* HEADER */
+  .rv-header {
+    background: linear-gradient(135deg, var(--rojo-oscuro) 0%, var(--rojo) 60%, var(--marron-claro) 100%);
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 4px 20px rgba(146,43,33,0.4);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .rv-header::before {
+    content: '';
+    position: absolute;
+    top: -30px; right: -30px;
+    width: 120px; height: 120px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.06);
+  }
+
+  .rv-header::after {
+    content: '';
+    position: absolute;
+    bottom: -20px; left: 30%;
+    width: 80px; height: 80px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.04);
+  }
+
+  .rv-logo {
+    font-family: 'Playfair Display', serif;
+    font-size: 22px;
+    font-weight: 900;
+    color: #fff;
+    letter-spacing: 1px;
+    text-shadow: 1px 2px 8px rgba(0,0,0,0.3);
+  }
+
+  .rv-logo span {
+    color: var(--naranja-claro);
+  }
+
+  .rv-btn-back {
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.3);
+    color: #fff;
+    padding: 7px 16px;
+    border-radius: 20px;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: 'Lato', sans-serif;
+    transition: all 0.2s;
+    backdrop-filter: blur(4px);
+  }
+
+  .rv-btn-back:hover {
+    background: rgba(255,255,255,0.25);
+  }
+
+  /* LAYOUT PRINCIPAL */
+  .rv-main {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 20px;
+    padding: 24px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  @media (max-width: 768px) {
+    .rv-main {
+      grid-template-columns: 1fr;
+      padding: 16px;
+    }
+  }
+
+  /* SECCIÓN PRODUCTOS */
+  .rv-section-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--marron);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .rv-section-title::after {
+    content: '';
+    flex: 1;
+    height: 2px;
+    background: linear-gradient(to right, var(--naranja), transparent);
+    border-radius: 2px;
+  }
+
+  .rv-productos-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 14px;
+  }
+
+  .rv-producto-card {
+    background: var(--blanco);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 12px rgba(110,44,14,0.1);
+    cursor: pointer;
+    transition: all 0.25s ease;
+    border: 2px solid transparent;
+    position: relative;
+  }
+
+  .rv-producto-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(192,57,43,0.2);
+    border-color: var(--naranja);
+  }
+
+  .rv-producto-card:active {
+    transform: scale(0.97);
+  }
+
+  .rv-producto-img {
+    width: 100%;
+    height: 100px;
+    object-fit: cover;
+  }
+
+  .rv-producto-img-placeholder {
+    width: 100%;
+    height: 100px;
+    background: linear-gradient(135deg, var(--crema-oscuro), #e8d5b0);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
+  }
+
+  .rv-producto-info {
+    padding: 10px 12px;
+  }
+
+  .rv-producto-nombre {
+    font-family: 'Lato', sans-serif;
+    font-weight: 700;
+    font-size: 13px;
+    color: var(--texto-oscuro);
+    margin-bottom: 4px;
+    line-height: 1.3;
+  }
+
+  .rv-producto-precio {
+    font-family: 'Playfair Display', serif;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--rojo);
+  }
+
+  .rv-agregar-btn {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    background: var(--rojo);
+    color: white;
+    border: none;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+    box-shadow: 0 2px 6px rgba(192,57,43,0.4);
+  }
+
+  .rv-agregar-btn:hover {
+    background: var(--rojo-oscuro);
+  }
+
+  /* PANEL CARRITO */
+  .rv-carrito-panel {
+    background: var(--blanco);
+    border-radius: 16px;
+    box-shadow: 0 4px 24px rgba(110,44,14,0.12);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    height: fit-content;
+    position: sticky;
+    top: 24px;
+    border: 1px solid rgba(230,126,34,0.15);
+  }
+
+  .rv-carrito-header {
+    background: linear-gradient(135deg, var(--marron) 0%, var(--texto-oscuro) 100%);
+    padding: 16px 20px;
+    color: white;
+    font-family: 'Playfair Display', serif;
+    font-size: 18px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .rv-carrito-badge {
+    background: var(--naranja);
+    color: white;
+    font-family: 'Lato', sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 12px;
+    margin-left: auto;
+  }
+
+  .rv-carrito-items {
+    padding: 12px;
+    max-height: 280px;
+    overflow-y: auto;
+    flex: 1;
+  }
+
+  .rv-carrito-items::-webkit-scrollbar {
+    width: 4px;
+  }
+  .rv-carrito-items::-webkit-scrollbar-track { background: var(--crema); }
+  .rv-carrito-items::-webkit-scrollbar-thumb { background: var(--naranja); border-radius: 4px; }
+
+  .rv-carrito-vacio {
+    text-align: center;
+    color: #aaa;
+    font-size: 13px;
+    padding: 32px 16px;
+  }
+
+  .rv-carrito-vacio-icon {
+    font-size: 40px;
+    display: block;
+    margin-bottom: 8px;
+    opacity: 0.4;
+  }
+
+  .rv-item-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 8px;
+    border-radius: 8px;
+    transition: background 0.15s;
+    border-bottom: 1px dashed rgba(230,126,34,0.2);
+  }
+
+  .rv-item-row:last-child { border-bottom: none; }
+  .rv-item-row:hover { background: var(--crema); }
+
+  .rv-item-nombre {
+    flex: 1;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--texto-oscuro);
+  }
+
+  .rv-item-cant {
+    font-size: 12px;
+    color: var(--texto-medio);
+    background: var(--crema-oscuro);
+    padding: 2px 6px;
+    border-radius: 8px;
+    font-weight: 700;
+  }
+
+  .rv-item-precio {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--rojo);
+    font-family: 'Playfair Display', serif;
+    min-width: 52px;
+    text-align: right;
+  }
+
+  .rv-item-del {
+    background: none;
+    border: none;
+    color: #ccc;
+    cursor: pointer;
+    font-size: 16px;
+    padding: 0 2px;
+    transition: color 0.2s;
+    line-height: 1;
+  }
+
+  .rv-item-del:hover { color: var(--rojo); }
+
+  /* TOTALES Y PAGO */
+  .rv-totales {
+    padding: 16px 20px;
+    border-top: 2px solid var(--crema-oscuro);
+    background: var(--crema);
+  }
+
+  .rv-total-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+    font-size: 13px;
+    color: var(--texto-medio);
+  }
+
+  .rv-total-principal {
+    font-family: 'Playfair Display', serif;
+    font-size: 22px;
+    font-weight: 900;
+    color: var(--texto-oscuro);
+    margin: 8px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .rv-total-principal span:last-child {
+    color: var(--rojo);
+  }
+
+  .rv-divider {
+    border: none;
+    border-top: 1px dashed rgba(110,44,14,0.2);
+    margin: 12px 0;
+  }
+
+  .rv-input-label {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--texto-medio);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+    display: block;
+  }
+
+  .rv-input {
+    width: 100%;
+    padding: 10px 14px;
+    border: 2px solid var(--crema-oscuro);
+    border-radius: 8px;
+    font-family: 'Playfair Display', serif;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--texto-oscuro);
+    background: var(--blanco);
+    transition: border-color 0.2s;
+    box-sizing: border-box;
+    outline: none;
+  }
+
+  .rv-input:focus {
+    border-color: var(--naranja);
+  }
+
+  .rv-cambio-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-top: 10px;
+  }
+
+  .rv-cambio-label {
+    font-size: 12px;
+    font-weight: 700;
+    color: #2e7d32;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .rv-cambio-valor {
+    font-family: 'Playfair Display', serif;
+    font-size: 20px;
+    font-weight: 900;
+    color: #1b5e20;
+  }
+
+  /* BOTÓN CONFIRMAR */
+  .rv-btn-confirmar {
+    margin: 16px 20px 20px;
+    padding: 15px;
+    background: linear-gradient(135deg, var(--rojo) 0%, var(--rojo-oscuro) 100%);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-family: 'Playfair Display', serif;
+    font-size: 17px;
+    font-weight: 700;
+    cursor: pointer;
+    width: calc(100% - 40px);
+    letter-spacing: 0.5px;
+    box-shadow: 0 4px 16px rgba(192,57,43,0.35);
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .rv-btn-confirmar:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(192,57,43,0.45);
+  }
+
+  .rv-btn-confirmar:active {
+    transform: translateY(0);
+  }
+
+  .rv-btn-confirmar:disabled {
+    background: #ccc;
+    box-shadow: none;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  /* DECORACIÓN BANNER */
+  .rv-banner-deco {
+    background: linear-gradient(135deg, var(--naranja) 0%, var(--naranja-claro) 100%);
+    padding: 8px 24px;
+    display: flex;
+    gap: 20px;
+    font-size: 11px;
+    font-weight: 700;
+    color: white;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    overflow: hidden;
+  }
+`;
+
+function PantallaVentas() {
+  const navigate = useNavigate();
+  const [productos, setProductos] = useState([]);
+  const [carrito, setCarrito] = useState([]);
+  const [recibido, setRecibido] = useState("");
+  const [cambio, setCambio] = useState(0);
+
+  useEffect(() => {
+    const cargar = async () => {
+      if (isWeb()) {
+        const data = localStorage.getItem("productos");
+        setProductos(data ? JSON.parse(data) : []);
+      } else {
+        const db = getDB();
+        const res = await db.query("SELECT * FROM productos");
+        setProductos(res?.values || []);
+      }
+    };
+    cargar();
+  }, []);
+
+  const agregarAlCarrito = (producto) => {
+    const existe = carrito.find((p) => p.id === producto.id);
+    if (existe) {
+      setCarrito(carrito.map((p) =>
+        p.id === producto.id ? { ...p, cantidad: p.cantidad + 1 } : p
+      ));
+    } else {
+      setCarrito([...carrito, { ...producto, cantidad: 1 }]);
+    }
+  };
+
+  const eliminarDelCarrito = (id) => {
+    setCarrito(carrito.filter((p) => p.id !== id));
+  };
+
+  const total = carrito.reduce((acc, item) => acc + item.precio * item.cantidad, 0);
+
+  useEffect(() => {
+    const dinero = parseFloat(recibido) || 0;
+    setCambio(dinero - total);
+  }, [recibido, total]);
+
+  const obtenerSiguienteFolio = async () => {
+    if (isWeb()) {
+      const ventas = JSON.parse(localStorage.getItem("ventas")) || [];
+      return ventas.length > 0 ? ventas[ventas.length - 1].folio + 1 : 0;
+    } else {
+      const db = getDB();
+      const res = await db.query("SELECT MAX(folio) as ultimo FROM ventas");
+      const ultimo = res.values[0]?.ultimo;
+      return ultimo !== null && ultimo !== undefined ? ultimo + 1 : 0;
+    }
+  };
+
+  const generarPDF = (folio) => {
+    const doc = new jsPDF();
+    doc.setFontSize(14);
+    doc.text("Tacos Rivera", 10, 10);
+    doc.setFontSize(12);
+    doc.text(`FOLIO: ${String(folio).padStart(9, "0")}`, 10, 20);
+    doc.text("----------------------------", 10, 28);
+    let y = 36;
+    carrito.forEach((item) => {
+      doc.text(`${item.nombre} x${item.cantidad} - $${(item.precio * item.cantidad).toFixed(2)}`, 10, y);
+      y += 8;
+    });
+    doc.text("----------------------------", 10, y); y += 8;
+    doc.text(`TOTAL: $${total.toFixed(2)}`, 10, y); y += 8;
+    doc.text(`RECIBIDO: $${parseFloat(recibido || 0).toFixed(2)}`, 10, y); y += 8;
+    doc.text(`CAMBIO: $${cambio.toFixed(2)}`, 10, y); y += 16;
+    doc.text("Gracias por su compra", 10, y);
+    doc.save(`Ticket_${folio}.pdf`);
+  };
+
+  const confirmarVenta = async () => {
+    if (carrito.length === 0) return alert("Carrito vacío");
+    if (!recibido || parseFloat(recibido) < total) return alert("El dinero recibido es insuficiente");
+
+    const folio = await obtenerSiguienteFolio();
+    const fecha = new Date().toISOString();
+
+    if (isWeb()) {
+      let ventas = JSON.parse(localStorage.getItem("ventas")) || [];
+      ventas.push({ id: Date.now(), folio, total, fecha, detalle: carrito });
+      localStorage.setItem("ventas", JSON.stringify(ventas));
+    } else {
+      const db = getDB();
+      const result = await db.run(
+        "INSERT INTO ventas (folio, total, fecha) VALUES (?, ?, ?)",
+        [folio, total, fecha]
+      );
+      const ventaId = result.changes?.lastId;
+      for (let item of carrito) {
+        await db.run(
+          `INSERT INTO detalle_venta (venta_id, producto_id, nombre, precio, cantidad) VALUES (?, ?, ?, ?, ?)`,
+          [ventaId, item.id, item.nombre, item.precio, item.cantidad]
+        );
+      }
+    }
+
+    generarPDF(folio);
+    alert(`✅ Venta realizada - Folio ${String(folio).padStart(9, "0")}`);
+    setCarrito([]);
+    setRecibido("");
+    setCambio(0);
+  };
+
+  const totalItems = carrito.reduce((acc, i) => acc + i.cantidad, 0);
+
+  return (
+    <>
+      <style>{styles}</style>
+      <div className="rv-app">
+        {/* Header */}
+        <div className="rv-header">
+          <button className="rv-btn-back" onClick={() => navigate("/")}>
+            ← Regresar
+          </button>
+          <div className="rv-logo">🌮 Tacos <span>Rivera</span></div>
+          <div style={{ width: 90 }} />
+        </div>
+
+        {/* Banner decorativo */}
+        <div className="rv-banner-deco">
+          {["✦ Bienvenido", "✦ Orden del día", "✦ Sabor auténtico", "✦ Servicio rápido", "✦ Bienvenido", "✦ Orden del día"].map((t, i) => (
+            <span key={i}>{t}</span>
+          ))}
+        </div>
+
+        {/* Layout principal */}
+        <div className="rv-main">
+          {/* Productos */}
+          <div>
+            <div className="rv-section-title">🍽️ Menú del Día</div>
+            {productos.length === 0 ? (
+              <div style={{ textAlign: "center", color: "#aaa", padding: "40px", fontFamily: "Lato, sans-serif" }}>
+                No hay productos disponibles
+              </div>
+            ) : (
+              <div className="rv-productos-grid">
+                {productos.map((p) => (
+                  <div key={p.id} className="rv-producto-card" onClick={() => agregarAlCarrito(p)}>
+                    {p.imagen
+                      ? <img src={p.imagen} className="rv-producto-img" alt={p.nombre} />
+                      : <div className="rv-producto-img-placeholder">🌮</div>
+                    }
+                    <div className="rv-producto-info">
+                      <div className="rv-producto-nombre">{p.nombre}</div>
+                      <div className="rv-producto-precio">${p.precio.toFixed(2)}</div>
+                    </div>
+                    <button className="rv-agregar-btn" onClick={(e) => { e.stopPropagation(); agregarAlCarrito(p); }}>+</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Carrito */}
+          <div className="rv-carrito-panel">
+            <div className="rv-carrito-header">
+              🛒 Orden
+              {totalItems > 0 && <span className="rv-carrito-badge">{totalItems} items</span>}
+            </div>
+
+            <div className="rv-carrito-items">
+              {carrito.length === 0 ? (
+                <div className="rv-carrito-vacio">
+                  <span className="rv-carrito-vacio-icon">🍽️</span>
+                  Agrega platillos del menú
+                </div>
+              ) : (
+                carrito.map((item) => (
+                  <div key={item.id} className="rv-item-row">
+                    <div className="rv-item-nombre">{item.nombre}</div>
+                    <span className="rv-item-cant">x{item.cantidad}</span>
+                    <span className="rv-item-precio">${(item.precio * item.cantidad).toFixed(2)}</span>
+                    <button className="rv-item-del" onClick={() => eliminarDelCarrito(item.id)}>✕</button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="rv-totales">
+              <div className="rv-total-principal">
+                <span>Total</span>
+                <span>${total.toFixed(2)}</span>
+              </div>
+              <hr className="rv-divider" />
+              <label className="rv-input-label">💵 Efectivo recibido</label>
+              <input
+                type="number"
+                className="rv-input"
+                value={recibido}
+                onChange={(e) => setRecibido(e.target.value)}
+                placeholder="$0.00"
+              />
+              {parseFloat(recibido) > 0 && (
+                <div className="rv-cambio-row">
+                  <span className="rv-cambio-label">💚 Cambio</span>
+                  <span className="rv-cambio-valor">${Math.max(cambio, 0).toFixed(2)}</span>
+                </div>
+              )}
+            </div>
+
+            <button
+              className="rv-btn-confirmar"
+              onClick={confirmarVenta}
+              disabled={carrito.length === 0}
+            >
+              ✓ Confirmar Orden · ${total.toFixed(2)}
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+export default PantallaVentas;
